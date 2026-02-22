@@ -79,13 +79,23 @@ class FortifyServiceProvider extends ServiceProvider
     private function configureRateLimiting(): void
     {
         RateLimiter::for('two-factor', function (Request $request) {
-            return Limit::perMinute(5)->by($request->session()->get('login.id'));
+            $userId = $request->session()->get('login.id');
+
+            return [
+                Limit::perMinute(5)->by($userId),
+                Limit::perHour(10)->by($userId),
+            ];
         });
 
         RateLimiter::for('login', function (Request $request) {
-            $throttleKey = Str::transliterate(Str::lower($request->input(Fortify::username())).'|'.$request->ip());
+            $email = Str::transliterate(Str::lower($request->input(Fortify::username())));
+            $ipKey = $email.'|'.$request->ip();
 
-            return Limit::perMinute(5)->by($throttleKey);
+            return [
+                Limit::perMinute(5)->by($ipKey),      // 5/min por email+IP
+                Limit::perHour(15)->by($ipKey),        // 15/hora por email+IP
+                Limit::perHour(30)->by($email),        // 30/hora por email (todos os IPs)
+            ];
         });
     }
 }
