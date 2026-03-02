@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Fortify\TwoFactorAuthenticatable;
@@ -22,6 +23,11 @@ class User extends Authenticatable implements MustVerifyEmail
         'name',
         'email',
         'password',
+        'bio',
+        'phone',
+        'location',
+        'avatar',
+        'is_coach',
     ];
 
     /**
@@ -47,6 +53,22 @@ class User extends Authenticatable implements MustVerifyEmail
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'two_factor_confirmed_at' => 'datetime',
+            'is_coach' => 'boolean',
         ];
+    }
+
+    public function swimSessions(): HasMany
+    {
+        return $this->hasMany(SwimSession::class);
+    }
+
+    public function athletes(): HasMany
+    {
+        return $this->hasMany(Athlete::class, 'coach_id');
+    }
+
+    public function swimGroups(): HasMany
+    {
+        return $this->hasMany(SwimGroup::class, 'coach_id');
     }
 }

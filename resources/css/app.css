@@ -141,3 +141,17 @@
         @apply bg-background text-foreground;
     }
 }
+
+/* Utility: hide scrollbar for horizontal scroll containers */
+.scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+    display: none;
+}
+
+/* Utility: safe area padding for bottom nav on notched phones */
+.pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+}

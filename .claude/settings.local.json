@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm audit:*)",
+      "Bash(php artisan migrate:*)",
+      "Bash(php artisan migrate:status)",
+      "Bash(php artisan tinker --execute=\"print_r\\(DB::select\\(''DESCRIBE swim_groups''\\)\\);\")",
+      "Bash(php artisan tinker --execute=\"echo ''sessions:'' . DB::table\\(''swim_sessions''\\)->count\\(\\) . '' athletes:'' . DB::table\\(''athletes''\\)->count\\(\\);\")",
+      "Bash(php artisan migrate:rollback --step=1)",
+      "Bash(php artisan make:migration add_details_to_athletes_table)",
+      "Bash(php artisan make:migration add_competition_fields_to_swim_records_table)"
+    ]
+  }
+}
