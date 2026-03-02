@@ -1,149 +1,231 @@
-import { Head, Link, useForm, router } from '@inertiajs/react';
+import { useState, useEffect } from 'react';
+import { Head, Link, router } from '@inertiajs/react';
 import HomeLayout from '@/layouts/home-layout';
-import { Users, UserRound, ArrowLeft, Plus, X } from 'lucide-react';
-import { useState } from 'react';
+import { ArrowLeft, Trash2, Users, X, Plus } from 'lucide-react';
 
-export default function GroupShow({ group, availableAthletes }: { group: any, availableAthletes: any[] }) {
-    const [isAdding, setIsAdding] = useState(false);
-    const { data, setData, post, processing, reset } = useForm({
-        athlete_id: '',
-    });
+interface Athlete { id: number; name: string; gender?: string; }
+interface Group   { id: number; name: string; description?: string; athletes: Athlete[]; }
 
-    const submitAdd = (e: React.FormEvent) => {
-        e.preventDefault();
-        post(`/coach/groups/${group.id}/add-athlete`, {
-            onSuccess: () => {
-                setIsAdding(false);
-                reset();
-            }
-        });
+export default function GroupShow({
+    group: initialGroup,
+    availableAthletes: initialAvailable,
+}: {
+    group: Group;
+    availableAthletes: Athlete[];
+}) {
+    const [members,        setMembers]        = useState<Athlete[]>(initialGroup.athletes ?? []);
+    const [available,      setAvailable]      = useState<Athlete[]>(initialAvailable);
+    const [dragOver,       setDragOver]       = useState(false);
+    const [newAthleteName, setNewAthleteName] = useState('');
+    const [creatingAthlete, setCreatingAthlete] = useState(false);
+
+    useEffect(() => {
+        setMembers(initialGroup.athletes ?? []);
+    }, [initialGroup.id]);
+
+    useEffect(() => {
+        setAvailable(initialAvailable);
+    }, [initialAvailable]);
+
+    const addAthlete = (a: Athlete) => {
+        if (members.some(m => m.id === a.id)) return;
+        setMembers(prev => [...prev, a]);
+        setAvailable(prev => prev.filter(x => x.id !== a.id));
+        router.post(
+            `/coach/groups/${initialGroup.id}/add-athlete`,
+            { athlete_id: a.id },
+            {
+                preserveState: true,
+                preserveScroll: true,
+                onError: () => {
+                    setMembers(prev => prev.filter(x => x.id !== a.id));
+                    setAvailable(prev => [...prev, a].sort((x, y) => x.name.localeCompare(y.name)));
+                },
+            },
+        );
     };
 
-    const removeAthlete = (athleteId: number) => {
-        if (confirm('Are you sure you want to remove this athlete from the group?')) {
-            router.delete(`/coach/groups/${group.id}/remove-athlete/${athleteId}`);
-        }
+    const removeAthlete = (a: Athlete) => {
+        setMembers(prev => prev.filter(x => x.id !== a.id));
+        setAvailable(prev => [...prev, a].sort((x, y) => x.name.localeCompare(y.name)));
+        router.delete(
+            `/coach/groups/${initialGroup.id}/remove-athlete/${a.id}`,
+            {
+                preserveState: true,
+                preserveScroll: true,
+                onError: () => {
+                    setMembers(prev => [...prev, a]);
+                    setAvailable(prev => prev.filter(x => x.id !== a.id));
+                },
+            },
+        );
+    };
+
+    const createAthlete = () => {
+        const name = newAthleteName.trim();
+        if (!name) return;
+        setCreatingAthlete(true);
+        router.post(
+            '/coach/athletes',
+            { name },
+            {
+                preserveState: true,
+                only: ['availableAthletes'],
+                onSuccess: () => {
+                    setNewAthleteName('');
+                    setCreatingAthlete(false);
+                },
+                onError: () => setCreatingAthlete(false),
+            },
+        );
     };
 
     const destroyGroup = () => {
-        if (confirm('Are you sure you want to completely delete this group?')) {
-            router.delete(`/coach/groups/${group.id}`);
+        if (confirm('Tens a certeza que queres eliminar este grupo?')) {
+            router.delete(`/coach/groups/${initialGroup.id}`);
         }
     };
 
     return (
         <HomeLayout>
-            <Head title={group.name} />
+            <Head title={initialGroup.name} />
 
-            <div className="mx-auto max-w-7xl px-4 py-8 md:px-8">
+            <div className="flex flex-col h-[calc(100dvh-7rem)] md:h-[calc(100dvh-6rem)] overflow-hidden px-2 pt-2 pb-1 gap-2">
+
                 {/* Header */}
-                <div className="mb-6 flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                        <Link href="/coach/groups" className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/10 text-blue-300 transition hover:bg-blue-500/20">
-                            <ArrowLeft className="h-5 w-5" />
+                <div className="flex items-center justify-between shrink-0 px-1">
+                    <div className="flex items-center gap-2">
+                        <Link
+                            href="/coach/groups"
+                            className="w-7 h-7 flex items-center justify-center rounded-xl bg-white/5 hover:bg-white/10 border border-white/8 text-white/40 hover:text-white/70 transition-all"
+                        >
+                            <ArrowLeft className="w-3.5 h-3.5" />
                         </Link>
-                        <div>
-                            <h1 className="text-2xl font-bold text-white tracking-tight">{group.name}</h1>
-                            <p className="mt-1 text-sm text-blue-200/50">
-                                {group.athletes?.length || 0} Athletes enrolled
-                            </p>
-                        </div>
+                        <Users className="w-4 h-4 text-blue-400" />
+                        <h1 className="text-white font-bold text-sm tracking-wide">{initialGroup.name}</h1>
+                        <span className="text-white/25 text-xs tabular-nums">{members.length} atletas</span>
                     </div>
                     <button
                         onClick={destroyGroup}
-                        className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-2 text-sm font-medium text-red-400 transition hover:bg-red-500/20 hover:text-red-300"
+                        className="h-7 px-2.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 border transition-all bg-red-500/10 hover:bg-red-500/20 text-red-400/70 hover:text-red-300 border-red-400/15"
                     >
-                        Delete Group
+                        <Trash2 className="w-3 h-3" />
+                        <span className="hidden sm:block">Eliminar grupo</span>
                     </button>
                 </div>
 
-                {/* Info Card */}
-                <div className="mb-8 overflow-hidden rounded-[22px] border border-blue-400/10 bg-[#111d36]/50 p-6 shadow-[0_0_30px_rgba(59,130,246,0.03)] backdrop-blur-2xl">
-                    <div className="flex items-start gap-5">
-                        <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border border-blue-400/20 bg-blue-500/10 shadow-[0_0_20px_rgba(59,130,246,0.15)]">
-                            <Users className="h-7 w-7 text-blue-300" />
-                        </div>
-                        <div>
-                            <h3 className="text-[13px] font-semibold text-blue-200/50">Description</h3>
-                            <p className="mt-1 text-sm leading-relaxed text-blue-50">{group.description || 'No description provided.'}</p>
-                        </div>
-                    </div>
-                </div>
+                {/* Two-column body */}
+                <div className="flex flex-1 min-h-0 gap-2">
 
-                {/* Athletes List */}
-                <div className="mt-10">
-                    <div className="mb-6 flex items-center justify-between">
-                        <h2 className="text-xl font-bold text-blue-50">Squad Members</h2>
-                        <button
-                            onClick={() => setIsAdding(!isAdding)}
-                            className="flex items-center gap-1.5 rounded-lg bg-blue-500/10 px-3 py-1.5 text-xs font-semibold text-blue-300 transition hover:bg-blue-500 border border-blue-400/20 hover:text-white"
-                        >
-                            <Plus className="h-3.5 w-3.5" />
-                            {isAdding ? 'Cancel' : 'Add to Squad'}
-                        </button>
-                    </div>
-
-                    {isAdding && (
-                        <div className="mb-6 overflow-hidden rounded-[18px] border border-blue-400/15 bg-[#111d36]/60 p-4 shadow-[0_0_20px_rgba(59,130,246,0.05)] backdrop-blur-xl">
-                            <form onSubmit={submitAdd} className="flex flex-col gap-3 sm:flex-row sm:items-end">
-                                <div className="flex-1">
-                                    <label className="mb-1 block text-xs font-semibold text-blue-200/60">Select Athlete (not in group)</label>
-                                    <select
-                                        value={data.athlete_id}
-                                        onChange={e => setData('athlete_id', e.target.value)}
-                                        className="w-full rounded-xl border border-blue-400/15 bg-[#0b1120]/60 px-4 py-2.5 text-sm text-blue-50 outline-none transition focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/50"
-                                        required
-                                    >
-                                        <option value="">Choose an athlete...</option>
-                                        {availableAthletes.map(a => (
-                                            <option key={a.id} value={a.id}>{a.name}</option>
-                                        ))}
-                                    </select>
-                                </div>
+                    {/* ── Left: available athletes ── */}
+                    <div className="flex flex-col w-1/2 min-h-0 rounded-2xl border border-white/8 bg-white/2.5 overflow-hidden">
+                        <div className="flex items-center gap-2 px-3 py-2.5 border-b border-white/6 shrink-0">
+                            <p className="text-white/30 text-[10px] font-bold uppercase tracking-wider">
+                                Disponíveis · {available.length}
+                            </p>
+                        </div>
+                        <div className="flex-1 min-h-0 overflow-y-auto px-2 py-2 space-y-1">
+                            {available.map(a => (
                                 <button
-                                    type="submit"
-                                    disabled={processing || !data.athlete_id}
-                                    className="rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-2.5 text-sm font-bold text-white shadow-[0_0_15px_rgba(59,130,246,0.3)] transition hover:shadow-[0_0_20px_rgba(59,130,246,0.5)] disabled:opacity-50"
+                                    key={a.id}
+                                    draggable
+                                    onDragStart={e => {
+                                        e.dataTransfer.setData('athleteId',   String(a.id));
+                                        e.dataTransfer.setData('athleteName', a.name);
+                                    }}
+                                    onClick={() => addAthlete(a)}
+                                    className="w-full flex items-center gap-2.5 rounded-xl border border-white/8 bg-white/2 hover:bg-white/5 hover:border-white/15 px-3 py-2.5 text-left transition-all cursor-grab active:cursor-grabbing"
                                 >
-                                    Add
+                                    <div className="w-7 h-7 rounded-full bg-blue-500/15 border border-blue-400/15 flex items-center justify-center shrink-0">
+                                        <span className="text-[10px] font-bold text-blue-300/60">{a.name[0]?.toUpperCase()}</span>
+                                    </div>
+                                    <span className="flex-1 text-white/65 text-sm font-medium truncate">{a.name}</span>
+                                    <Plus className="w-3.5 h-3.5 text-white/15 shrink-0" />
                                 </button>
-                            </form>
-                        </div>
-                    )}
-
-                    <div className="grid gap-3">
-                        {group.athletes?.map((athlete: any) => (
-                            <div key={athlete.id} className="flex flex-col gap-4 sm:flex-row sm:items-center justify-between overflow-hidden rounded-[18px] border border-blue-400/8 bg-[#111d36]/40 p-4 shadow-[0_0_20px_rgba(59,130,246,0.02)] backdrop-blur-xl transition hover:border-blue-400/20">
-                                <div className="flex items-center gap-4">
-                                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-amber-400/20 bg-gradient-to-br from-amber-500/10 to-orange-500/10 shadow-[0_0_10px_rgba(251,191,36,0.1)]">
-                                        <UserRound className="h-4 w-4 text-amber-300" />
-                                    </div>
-                                    <div>
-                                        <Link href={`/coach/athletes/${athlete.id}`} className="text-base font-bold text-blue-50 hover:text-blue-300 hover:underline">{athlete.name}</Link>
-                                        <p className="mt-0.5 flex gap-2 text-xs text-blue-200/40">
-                                            {athlete.gender && <span>{athlete.gender}</span>}
-                                        </p>
-                                    </div>
+                            ))}
+                            {available.length === 0 && (
+                                <div className="flex flex-col items-center justify-center h-full gap-2 py-8">
+                                    <Users className="w-6 h-6 text-white/10" />
+                                    <p className="text-white/15 text-xs text-center">Todos os atletas estão no grupo</p>
                                 </div>
+                            )}
+                        </div>
 
+                        {/* ── Create new athlete ── */}
+                        <div className="shrink-0 border-t border-white/6 px-2 py-2">
+                            <div className="flex gap-1.5">
+                                <input
+                                    value={newAthleteName}
+                                    onChange={e => setNewAthleteName(e.target.value)}
+                                    onKeyDown={e => e.key === 'Enter' && createAthlete()}
+                                    placeholder="Novo atleta..."
+                                    className="flex-1 h-7 px-2.5 rounded-xl bg-white/5 border border-white/10 text-white/70 text-xs placeholder-white/20 focus:outline-none focus:border-blue-400/40 min-w-0"
+                                />
                                 <button
-                                    onClick={() => removeAthlete(athlete.id)}
-                                    className="flex items-center justify-center rounded-xl bg-red-500/10 px-3 py-1.5 text-xs font-semibold text-red-400 transition hover:bg-red-500 hover:text-white"
+                                    onClick={createAthlete}
+                                    disabled={!newAthleteName.trim() || creatingAthlete}
+                                    className="h-7 px-2.5 rounded-xl text-xs font-semibold bg-blue-500/15 hover:bg-blue-500/25 text-blue-300/70 hover:text-blue-200 border border-blue-400/15 disabled:opacity-30 transition-all flex items-center gap-1 shrink-0"
                                 >
-                                    <X className="mr-1 h-3.5 w-3.5" />
-                                    Remove
+                                    <Plus className="w-3 h-3" />
+                                    Criar
                                 </button>
                             </div>
-                        ))}
-
-                        {group.athletes?.length === 0 && (
-                            <div className="rounded-[18px] border border-blue-400/5 bg-[#111d36]/20 p-8 text-center backdrop-blur-sm">
-                                <p className="text-sm font-medium text-blue-200/40">No athletes in this squad yet.</p>
-                            </div>
-                        )}
+                        </div>
                     </div>
-                </div>
 
+                    {/* ── Right: group members drop zone ── */}
+                    <div
+                        className={`flex flex-col w-1/2 min-h-0 rounded-2xl border overflow-hidden transition-all duration-150 ${
+                            dragOver
+                                ? 'border-blue-400/30 bg-blue-950/20'
+                                : 'border-white/8 bg-white/2.5'
+                        }`}
+                        onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+                        onDragLeave={() => setDragOver(false)}
+                        onDrop={e => {
+                            e.preventDefault();
+                            setDragOver(false);
+                            const id   = Number(e.dataTransfer.getData('athleteId'));
+                            const name = e.dataTransfer.getData('athleteName');
+                            if (id && name) addAthlete({ id, name });
+                        }}
+                    >
+                        <div className="flex items-center gap-2 px-3 py-2.5 border-b border-white/6 shrink-0">
+                            <p className="text-white/30 text-[10px] font-bold uppercase tracking-wider">
+                                {initialGroup.name} · {members.length}
+                            </p>
+                        </div>
+                        <div className="flex-1 min-h-0 overflow-y-auto px-2 py-2 space-y-1">
+                            {members.length === 0 ? (
+                                <div className={`flex flex-col items-center justify-center h-full gap-2.5 rounded-xl border-2 border-dashed mx-1 transition-all ${
+                                    dragOver ? 'border-blue-400/40 bg-blue-500/5' : 'border-white/8'
+                                }`}>
+                                    <Users className="w-5 h-5 text-white/12" />
+                                    <p className="text-white/15 text-[10px] text-center px-4 leading-relaxed">
+                                        Toca ou arrasta<br/>atletas para o grupo
+                                    </p>
+                                </div>
+                            ) : (
+                                members.map((a, idx) => (
+                                    <div key={a.id} className="flex items-center gap-2.5 rounded-xl border border-white/8 bg-white/2.5 px-3 py-2.5">
+                                        <span className="text-[9px] text-white/20 w-4 tabular-nums shrink-0">{idx + 1}</span>
+                                        <div className="w-7 h-7 rounded-full bg-blue-500/15 border border-blue-400/15 flex items-center justify-center shrink-0">
+                                            <span className="text-[10px] font-bold text-blue-300/60">{a.name[0]?.toUpperCase()}</span>
+                                        </div>
+                                        <span className="flex-1 text-white/70 text-sm font-medium truncate">{a.name}</span>
+                                        <button
+                                            onClick={() => removeAthlete(a)}
+                                            className="text-white/20 hover:text-red-400 transition-colors shrink-0"
+                                        >
+                                            <X className="w-3.5 h-3.5" />
+                                        </button>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+
+                </div>
             </div>
         </HomeLayout>
     );

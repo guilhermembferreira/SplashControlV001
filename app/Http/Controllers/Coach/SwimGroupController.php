@@ -12,20 +12,35 @@ class SwimGroupController extends Controller
 {
     public function index(Request $request)
     {
-        $groups = $request->user()->swimGroups()->withCount('athletes')->get();
+        $groups   = $request->user()->swimGroups()->withCount('athletes')->get();
+        $athletes = $request->user()->athletes()->orderBy('name')->get(['id', 'name']);
+
         return Inertia::render('coach/groups/index', [
-            'groups' => $groups,
+            'groups'   => $groups,
+            'athletes' => $athletes,
         ]);
     }
 
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'name' => ['required', 'string', 'max:255'],
-            'description' => ['nullable', 'string'],
+            'name'          => ['required', 'string', 'max:255'],
+            'description'   => ['nullable', 'string'],
+            'athlete_ids'   => ['nullable', 'array'],
+            'athlete_ids.*' => ['integer', 'exists:athletes,id'],
         ]);
 
-        $request->user()->swimGroups()->create($validated);
+        $group = $request->user()->swimGroups()->create([
+            'name'        => $validated['name'],
+            'description' => $validated['description'] ?? null,
+        ]);
+
+        if (!empty($validated['athlete_ids'])) {
+            $athleteIds = $request->user()->athletes()
+                ->whereIn('id', $validated['athlete_ids'])
+                ->pluck('id');
+            $group->athletes()->sync($athleteIds);
+        }
 
         return redirect()->back()->with('message', 'Group created successfully.');
     }

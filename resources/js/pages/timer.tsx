@@ -4,7 +4,7 @@ import HomeLayout from '@/layouts/home-layout';
 import {
     Play, Pause, RotateCcw, Timer, Plus, Minus, Flag, Trash2,
     LayoutList, Columns3, CheckCircle2, ChevronLeft, ChevronRight,
-    History, Save, Users, X, UserPlus,
+    History, Save, Users, X, UserPlus, Download,
 } from 'lucide-react';
 
 /* ── Types ─────────────────────────────────────────────────────────────── */
@@ -186,6 +186,13 @@ export default function TimerPage() {
     const [activeGroupIdx, setActiveGroupIdx] = useState(0);
     const [groups, setGroups]                 = useState<Group[]>([newGroup(1), newGroup(2)]);
     const [savedFlash, setSavedFlash]         = useState<number | null>(null);
+    const [importSheetOpen, setImportSheetOpen] = useState(false);
+
+    // Create group sheet state
+    const [createGroupSheet, setCreateGroupSheet]       = useState(false);
+    const [createGroupName, setCreateGroupName]         = useState('');
+    const [createGroupAthletes, setCreateGroupAthletes] = useState<AthleteRef[]>([]);
+    const [dragOverCreate, setDragOverCreate]           = useState(false);
 
     // Assignment panel state
     const [assignGroupId, setAssignGroupId]         = useState<number | null>(null);
@@ -233,10 +240,23 @@ export default function TimerPage() {
 
     const toggleGroup = (id: number) => {
         const now = Date.now();
-        upd(id, g => g.isRunning
-            ? { ...g, isRunning: false, elapsed: now - (g.startTime ?? now), startTime: null, restStart: now, restElapsed: 0 }
-            : { ...g, isRunning: true,  startTime: now - g.elapsed, restStart: null, restElapsed: 0 },
-        );
+        upd(id, g => {
+            const hasLaneAthletes = g.lanes.some(l => l.athleteId !== null);
+            if (g.isRunning) {
+                return {
+                    ...g, isRunning: false, elapsed: now - (g.startTime ?? now), startTime: null, restStart: now, restElapsed: 0,
+                    lanes: hasLaneAthletes
+                        ? g.lanes.map(l => l.isRunning ? { ...l, isRunning: false, elapsed: now - (l.startTime ?? now), startTime: null, restStart: now, restElapsed: 0 } : l)
+                        : g.lanes,
+                };
+            }
+            return {
+                ...g, isRunning: true, startTime: now - g.elapsed, restStart: null, restElapsed: 0,
+                lanes: hasLaneAthletes
+                    ? g.lanes.map(l => l.finished || l.isRunning ? l : { ...l, isRunning: true, startTime: now - l.elapsed, restStart: null, restElapsed: 0 })
+                    : g.lanes,
+            };
+        });
     };
 
     const resetGroup = (id: number) =>
@@ -385,6 +405,53 @@ export default function TimerPage() {
 
     const addGroup = () => {
         if (groups.length < maxGroups) setGroups(prev => [...prev, newGroup(prev.length + 1)]);
+    };
+
+    const importSwimGroup = (sg: SwimGroupRef) => {
+        if (groups.length >= maxGroups) return;
+        const laneCount = Math.max(Math.min(sg.athletes.length, 12), 1);
+        const lanes = Array.from({ length: laneCount }, (_, i): LaneTimer => ({
+            ...newLane(),
+            athleteId:   sg.athletes[i]?.id   ?? null,
+            athleteName: sg.athletes[i]?.name ?? null,
+        }));
+        setGroups(prev => [...prev, {
+            id: _uid++, name: sg.name, swimmers: laneCount,
+            distance: 0, elapsed: 0, startTime: null, isRunning: false,
+            splits: [], restStart: null, restElapsed: 0, lanes, swimGroupId: sg.id,
+        }]);
+        setImportSheetOpen(false);
+    };
+
+    const openCreateGroupSheet = () => {
+        setCreateGroupName('');
+        setCreateGroupAthletes([]);
+        setCreateGroupSheet(true);
+    };
+
+    const addAthleteToNewGroup = (a: AthleteRef) => {
+        if (createGroupAthletes.some(x => x.id === a.id)) return;
+        setCreateGroupAthletes(prev => [...prev, a]);
+    };
+
+    const removeAthleteFromNewGroup = (athleteId: number) =>
+        setCreateGroupAthletes(prev => prev.filter(a => a.id !== athleteId));
+
+    const confirmCreateGroup = () => {
+        if (groups.length >= maxGroups) return;
+        const name = createGroupName.trim() || `Group ${groups.length + 1}`;
+        const laneCount = createGroupAthletes.length;
+        const lanes = Array.from({ length: laneCount }, (_, i): LaneTimer => ({
+            ...newLane(),
+            athleteId:   createGroupAthletes[i]?.id   ?? null,
+            athleteName: createGroupAthletes[i]?.name ?? null,
+        }));
+        setGroups(prev => [...prev, {
+            id: _uid++, name, swimmers: laneCount,
+            distance: 0, elapsed: 0, startTime: null, isRunning: false,
+            splits: [], restStart: null, restElapsed: 0, lanes, swimGroupId: null,
+        }]);
+        setCreateGroupSheet(false);
     };
 
     const switchMode = (next: TimerMode) => {
@@ -626,6 +693,30 @@ export default function TimerPage() {
                             </>
                         )}
 
+                        {mode !== 'history' && isCoach && (
+                            <button
+                                onClick={openCreateGroupSheet}
+                                disabled={groups.length >= maxGroups}
+                                className={`h-7 px-2.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 border transition-all disabled:opacity-25 ${iconBtnCls}`}
+                                title="Criar grupo com atletas"
+                            >
+                                <UserPlus className="w-3 h-3" />
+                                <span className="hidden sm:block">Criar</span>
+                            </button>
+                        )}
+
+                        {mode !== 'history' && isCoach && coachGroups.length > 0 && (
+                            <button
+                                onClick={() => setImportSheetOpen(true)}
+                                disabled={groups.length >= maxGroups}
+                                className={`h-7 px-2.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 border transition-all disabled:opacity-25 ${iconBtnCls}`}
+                                title="Importar grupo de treino"
+                            >
+                                <Download className="w-3 h-3" />
+                                <span className="hidden sm:block">Importar</span>
+                            </button>
+                        )}
+
                         {mode !== 'history' && (
                             <button onClick={addGroup} disabled={groups.length >= maxGroups} className={`h-7 w-7 rounded-xl ${iconBtnCls} flex items-center justify-center transition-all disabled:opacity-25`}>
                                 <Plus className="w-3.5 h-3.5" />
@@ -703,26 +794,83 @@ export default function TimerPage() {
                                         )}
                                     </div>
 
-                                    {/* Splits */}
-                                    <div className="flex-1 min-h-0 overflow-y-auto px-2.5 py-0.5">
-                                        {g.splits.length === 0 ? (
-                                            <div className="flex items-center justify-center h-full">
-                                                <span className="text-white/10 text-[10px]">no splits</span>
-                                            </div>
-                                        ) : (
-                                            <div className="space-y-px">
-                                                {[...g.splits].reverse().map((sp, ri) => {
-                                                    const i    = g.splits.length - 1 - ri;
-                                                    const prev = g.splits[i - 1] ?? 0;
+                                    {/* Athletes list or Splits */}
+                                    <div className="flex-1 min-h-0 overflow-y-auto px-2 py-0.5">
+                                        {hasAthletes ? (
+                                            <div className="space-y-0.5 py-0.5">
+                                                {g.lanes.map((lane, idx) => {
+                                                    const laneResting = !lane.isRunning && lane.elapsed > 0 && !lane.finished;
                                                     return (
-                                                        <div key={i} className="grid grid-cols-3 items-center text-[10px] py-px border-b border-white/4 last:border-0">
-                                                            <span className="text-white/20">#{i + 1}</span>
-                                                            <span className="text-white/50 font-mono tabular-nums text-center">{fmt(sp)}</span>
-                                                            <span className="text-blue-400/40 font-mono tabular-nums text-right">+{fmt(sp - prev)}</span>
+                                                        <div key={idx} className={`flex items-center gap-1.5 rounded-lg px-2 py-1.5 border transition-all ${
+                                                            lane.finished    ? 'bg-emerald-500/8 border-emerald-400/10'
+                                                            : lane.isRunning ? 'bg-blue-500/8 border-blue-400/10'
+                                                            : laneResting    ? 'bg-amber-500/5 border-amber-400/8'
+                                                            : 'border-white/4'
+                                                        }`}>
+                                                            <span className="text-[9px] text-white/20 w-3.5 shrink-0 tabular-nums">{idx + 1}</span>
+                                                            <span className="flex-1 text-[10px] font-semibold text-white/55 truncate">
+                                                                {lane.athleteName ? lane.athleteName.split(' ')[0] : '—'}
+                                                            </span>
+                                                            <span className={`font-mono text-[10px] tabular-nums shrink-0 ${
+                                                                lane.finished    ? 'text-emerald-300/70'
+                                                                : lane.isRunning ? 'text-blue-200/70'
+                                                                : laneResting    ? 'text-amber-200/60'
+                                                                : 'text-white/15'
+                                                            }`}>
+                                                                {fmt(lane.elapsed)}
+                                                            </span>
+                                                            {!lane.finished && (
+                                                                <button
+                                                                    onClick={() => toggleLane(g.id, idx)}
+                                                                    title={lane.isRunning ? 'Parar' : 'Iniciar'}
+                                                                    className={`w-4 h-4 flex items-center justify-center transition-colors shrink-0 ${
+                                                                        lane.isRunning
+                                                                            ? 'text-amber-400/70 hover:text-amber-300'
+                                                                            : 'text-white/20 hover:text-blue-400'
+                                                                    }`}
+                                                                >
+                                                                    {lane.isRunning
+                                                                        ? <Pause className="w-2.5 h-2.5" fill="currentColor" />
+                                                                        : <Play  className="w-2.5 h-2.5" fill="currentColor" />
+                                                                    }
+                                                                </button>
+                                                            )}
+                                                            {lane.finished ? (
+                                                                <CheckCircle2 className="w-2.5 h-2.5 text-emerald-400/60 shrink-0" />
+                                                            ) : (
+                                                                <button
+                                                                    onClick={() => finishLane(g.id, idx)}
+                                                                    disabled={lane.elapsed === 0}
+                                                                    title="Terminar atleta"
+                                                                    className="w-4 h-4 flex items-center justify-center text-white/15 hover:text-emerald-400 disabled:opacity-0 transition-colors shrink-0"
+                                                                >
+                                                                    <CheckCircle2 className="w-2.5 h-2.5" />
+                                                                </button>
+                                                            )}
                                                         </div>
                                                     );
                                                 })}
                                             </div>
+                                        ) : (
+                                            g.splits.length === 0 ? (
+                                                <div className="flex items-center justify-center h-full">
+                                                    <span className="text-white/10 text-[10px]">no splits</span>
+                                                </div>
+                                            ) : (
+                                                <div className="space-y-px">
+                                                    {[...g.splits].reverse().map((sp, ri) => {
+                                                        const i    = g.splits.length - 1 - ri;
+                                                        const prev = g.splits[i - 1] ?? 0;
+                                                        return (
+                                                            <div key={i} className="grid grid-cols-3 items-center text-[10px] py-px border-b border-white/4 last:border-0">
+                                                                <span className="text-white/20">#{i + 1}</span>
+                                                                <span className="text-white/50 font-mono tabular-nums text-center">{fmt(sp)}</span>
+                                                                <span className="text-blue-400/40 font-mono tabular-nums text-right">+{fmt(sp - prev)}</span>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )
                                         )}
                                     </div>
 
@@ -1414,6 +1562,209 @@ export default function TimerPage() {
                             </button>
 
                         </div>
+                    </div>
+                </>
+            )}
+
+            {/* ════════════════════════════════════════════════════════
+                Create Group Sheet (coach only) — drag & drop builder
+            ════════════════════════════════════════════════════════ */}
+            {isCoach && createGroupSheet && (
+                <>
+                    <div className="fixed inset-0 bg-black/60 z-40" onClick={() => setCreateGroupSheet(false)} />
+                    <div className="fixed bottom-0 left-0 right-0 z-50 bg-[#0a0c12] border-t border-white/10 rounded-t-2xl h-[82vh] flex flex-col">
+
+                        {/* Header: name input + Criar button */}
+                        <div className="flex items-center gap-2 px-4 pt-4 pb-3 shrink-0 border-b border-white/8">
+                            <input
+                                value={createGroupName}
+                                onChange={e => setCreateGroupName(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && createGroupAthletes.length > 0 && confirmCreateGroup()}
+                                placeholder="Nome do grupo..."
+                                autoFocus
+                                className="flex-1 h-9 px-3 rounded-xl bg-white/5 border border-white/10 text-white/80 text-sm placeholder-white/20 focus:outline-none focus:border-blue-400/40"
+                            />
+                            <button
+                                onClick={confirmCreateGroup}
+                                disabled={createGroupAthletes.length === 0 || groups.length >= maxGroups}
+                                className="h-9 px-4 rounded-xl text-xs font-bold bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-400/20 disabled:opacity-30 transition-all shrink-0"
+                            >
+                                Criar
+                            </button>
+                            <button
+                                onClick={() => setCreateGroupSheet(false)}
+                                className="w-7 h-7 rounded-full bg-white/8 hover:bg-white/15 flex items-center justify-center text-white/40 transition-colors shrink-0"
+                            >
+                                <X className="w-3.5 h-3.5" />
+                            </button>
+                        </div>
+
+                        {/* Import from existing swim group */}
+                        {coachGroups.length > 0 && (
+                            <div className="flex items-center gap-2 px-4 py-2.5 border-b border-white/6 shrink-0">
+                                <p className="text-white/25 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap shrink-0">Importar</p>
+                                <div className="flex flex-wrap gap-1.5 flex-1 min-w-0">
+                                    {coachGroups.map(sg => (
+                                        <button
+                                            key={sg.id}
+                                            onClick={() => {
+                                                setCreateGroupName(sg.name);
+                                                setCreateGroupAthletes(sg.athletes);
+                                            }}
+                                            className="h-6 px-2.5 rounded-lg text-[10px] font-semibold bg-white/5 hover:bg-blue-500/20 text-white/50 hover:text-blue-300 border border-white/8 hover:border-blue-400/20 transition-all whitespace-nowrap"
+                                        >
+                                            {sg.name} <span className="opacity-40">{sg.athletes.length}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Two-column body */}
+                        <div className="flex flex-1 min-h-0">
+
+                            {/* ── Left: all athletes ── */}
+                            <div className="flex flex-col w-1/2 min-h-0 border-r border-white/6">
+                                <p className="text-white/25 text-[10px] font-bold uppercase tracking-wider px-4 py-2.5 shrink-0">
+                                    Atletas · {coachAthletes.length}
+                                </p>
+                                <div className="flex-1 min-h-0 overflow-y-auto px-3 pb-4 space-y-1">
+                                    {coachAthletes.map(a => {
+                                        const isAdded = createGroupAthletes.some(x => x.id === a.id);
+                                        return (
+                                            <button
+                                                key={a.id}
+                                                draggable={!isAdded}
+                                                onDragStart={e => {
+                                                    e.dataTransfer.setData('athleteId', String(a.id));
+                                                    e.dataTransfer.setData('athleteName', a.name);
+                                                }}
+                                                onClick={() => !isAdded && addAthleteToNewGroup(a)}
+                                                disabled={isAdded}
+                                                className={`w-full flex items-center gap-2 rounded-xl border px-2.5 py-2 text-left transition-all ${
+                                                    isAdded
+                                                        ? 'border-white/4 opacity-25 cursor-not-allowed'
+                                                        : 'border-white/8 bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/15 cursor-grab active:cursor-grabbing'
+                                                }`}
+                                            >
+                                                <div className="w-6 h-6 rounded-full bg-blue-500/15 border border-blue-400/15 flex items-center justify-center shrink-0">
+                                                    <span className="text-[9px] font-bold text-blue-300/60">{a.name[0]?.toUpperCase()}</span>
+                                                </div>
+                                                <span className="flex-1 text-white/60 text-xs font-medium truncate">{a.name}</span>
+                                                {!isAdded && <Plus className="w-3 h-3 text-white/15 shrink-0" />}
+                                            </button>
+                                        );
+                                    })}
+                                    {coachAthletes.length === 0 && (
+                                        <p className="text-white/15 text-xs text-center py-6">Sem atletas criados</p>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* ── Right: group drop zone ── */}
+                            <div
+                                className={`flex flex-col w-1/2 min-h-0 transition-colors ${dragOverCreate ? 'bg-blue-950/20' : ''}`}
+                                onDragOver={e => { e.preventDefault(); setDragOverCreate(true); }}
+                                onDragLeave={() => setDragOverCreate(false)}
+                                onDrop={e => {
+                                    e.preventDefault();
+                                    setDragOverCreate(false);
+                                    const id   = Number(e.dataTransfer.getData('athleteId'));
+                                    const name = e.dataTransfer.getData('athleteName');
+                                    if (id && name) addAthleteToNewGroup({ id, name });
+                                }}
+                            >
+                                <p className="text-white/25 text-[10px] font-bold uppercase tracking-wider px-4 py-2.5 shrink-0">
+                                    Grupo · {createGroupAthletes.length}
+                                </p>
+                                <div className="flex-1 min-h-0 overflow-y-auto px-3 pb-4 space-y-1">
+                                    {createGroupAthletes.length === 0 ? (
+                                        <div className={`flex flex-col items-center justify-center h-full gap-2.5 rounded-xl border-2 border-dashed mx-1 transition-all ${
+                                            dragOverCreate ? 'border-blue-400/40 bg-blue-500/5' : 'border-white/8'
+                                        }`}>
+                                            <Users className="w-5 h-5 text-white/12" />
+                                            <p className="text-white/15 text-[10px] text-center px-4 leading-relaxed">Toca ou arrasta<br/>atletas para o grupo</p>
+                                        </div>
+                                    ) : (
+                                        createGroupAthletes.map((a, idx) => (
+                                            <div key={a.id} className="flex items-center gap-2 rounded-xl border border-white/8 bg-white/[0.025] px-2.5 py-2">
+                                                <span className="text-[9px] text-white/20 w-3.5 tabular-nums shrink-0">{idx + 1}</span>
+                                                <div className="w-6 h-6 rounded-full bg-blue-500/15 border border-blue-400/15 flex items-center justify-center shrink-0">
+                                                    <span className="text-[9px] font-bold text-blue-300/60">{a.name[0]?.toUpperCase()}</span>
+                                                </div>
+                                                <span className="flex-1 text-white/70 text-xs font-medium truncate">{a.name}</span>
+                                                <button
+                                                    onClick={() => removeAthleteFromNewGroup(a.id)}
+                                                    className="text-white/20 hover:text-red-400 transition-colors shrink-0"
+                                                >
+                                                    <X className="w-3 h-3" />
+                                                </button>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            </div>
+
+                        </div>
+                    </div>
+                </>
+            )}
+
+            {/* ════════════════════════════════════════════════════════
+                Import Swim Group Sheet (coach only)
+            ════════════════════════════════════════════════════════ */}
+            {isCoach && importSheetOpen && (
+                <>
+                    <div
+                        className="fixed inset-0 bg-black/60 z-40"
+                        onClick={() => setImportSheetOpen(false)}
+                    />
+                    <div className="fixed bottom-0 left-0 right-0 z-50 bg-[#0a0c12] border-t border-white/10 rounded-t-2xl max-h-[60vh] flex flex-col">
+
+                        <div className="flex items-center justify-between px-4 pt-4 pb-3 shrink-0">
+                            <div>
+                                <p className="text-white/80 text-sm font-bold">Importar grupo</p>
+                                <p className="text-white/30 text-xs">Cria um bloco de tempo com os atletas do grupo</p>
+                            </div>
+                            <button
+                                onClick={() => setImportSheetOpen(false)}
+                                className="w-7 h-7 rounded-full bg-white/8 hover:bg-white/15 flex items-center justify-center text-white/40 transition-colors"
+                            >
+                                <X className="w-3.5 h-3.5" />
+                            </button>
+                        </div>
+
+                        <div className="overflow-y-auto flex-1 px-4 pb-6 space-y-1.5">
+                            {coachGroups.map(sg => {
+                                const alreadyImported = groups.some(g => g.swimGroupId === sg.id);
+                                return (
+                                    <button
+                                        key={sg.id}
+                                        onClick={() => importSwimGroup(sg)}
+                                        disabled={alreadyImported || groups.length >= maxGroups}
+                                        className={`w-full flex items-center gap-3 rounded-xl border px-4 py-3 text-left transition-all ${
+                                            alreadyImported
+                                                ? 'border-white/4 bg-white/[0.01] opacity-30 cursor-not-allowed'
+                                                : 'border-white/8 bg-white/[0.025] hover:bg-white/5 hover:border-white/15'
+                                        }`}
+                                    >
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-white/75 text-sm font-semibold truncate">{sg.name}</p>
+                                            <p className="text-white/25 text-[10px] mt-0.5">{sg.athletes.length} atletas</p>
+                                        </div>
+                                        {alreadyImported ? (
+                                            <span className="text-[9px] font-bold text-white/20 uppercase tracking-wider shrink-0">Importado</span>
+                                        ) : (
+                                            <Download className="w-3.5 h-3.5 text-white/25 shrink-0" />
+                                        )}
+                                    </button>
+                                );
+                            })}
+                            {coachGroups.length === 0 && (
+                                <p className="text-white/20 text-xs text-center py-6">Sem grupos de treino criados</p>
+                            )}
+                        </div>
+
                     </div>
                 </>
             )}
